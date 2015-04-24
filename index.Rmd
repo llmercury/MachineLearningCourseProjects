@@ -1,0 +1,140 @@
+---
+title: "Practical Machine Learning Course Project on Human Activity Recognition"
+date: "Wednesday, April 22, 2015"
+output: html_document
+---
+
+## Abstract
+
+Multiple methods were used to predict the human activity classes from a data set containing measurements of accelerometers on human body parts. Among the applied methods, the highest observed classifier accuracy is Random Forest >99%. This algorithm was used to predict the activity classes in the test cases.
+
+## Introduction
+
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self-movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.
+
+The goal of this course project is to predict the human activity classes (sitting-down, standing-up, standing, walking, and sitting) by using data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har 
+ 
+
+## Data Source 
+
+The training data for this project are: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+## Data Preprocess
+
+The columns without values and with values of NA and #DIV/0! are removed from both training set and testing set. 19622 samples are in the training set. The distribution of the samples between the classes is illustrated in Figure 1.
+
+```{r preprocess, cache=TRUE}
+# read data
+# remove the columns with values NA and #DIV/0! and columns without values
+# Obtain the training dataset with predictors and outcome
+training <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+training <- training[, !apply(training, 2, function(x) {any(is.na(x) | x == "" | x == "#DIV/0!")})]
+test <- test[, !apply(test, 2, function(x) {any(is.na(x) | x == "" | x == "#DIV/0!")})]
+training <- training[, 8:60]
+test <- test[, 8:59]
+
+# plot the Frequency of Classes
+plot(training$classe, col="Salmon", main="Figure 1. Frequency of Classes", xlab="classe", ylab="Frequency")
+
+```
+
+## Cross Validation and Classifiers for Activity Recognition
+
+For classifying the activity, several methods will be used: Multinomial Logistic Regression, Logit Boosted Model, Random Forest, Support Vector Machine.
+
+To estimate the out of sample error, the training set is divided into a subTraining set and a subTest set.
+
+```{r divide_data, cache=TRUE}
+library(caret)
+inTrain <- createDataPartition(y = training$classe, p = 0.75, list = FALSE)
+subTraining <- training[inTrain, ]
+subTest <- training[-inTrain, ]
+```
+
+A 5-fold cross validation is performed.
+
+```{r cross_validation, cache=TRUE}
+tccv <- trainControl("cv", 5, savePred=T)
+```
+
+The libraries are called.
+
+```{r call_lib, cache=TRUE}
+library(nnet)
+library(caTools)
+library(randomForest)
+library(kernlab)
+library(knitr)
+
+```
+
+The models are applied.
+
+```{r models, cache=TRUE, message=FALSE, results='hide'}
+modMlr <- train(classe ~., data = subTraining, method = "multinom", trControl=tccv)
+modLb <- train(classe ~., data = subTraining, method = "LogitBoost", trControl=tccv)
+modRf <- train(classe ~., data = subTraining, method = "rf", trControl=tccv)
+modSvm <- train(classe ~., data = subTraining, method = "svmRadial", trControl=tccv)
+```
+
+The results are used to predict the activity classes in the subTest set and calculate the accuracy and out of sampe errors for the models.
+
+```{r predict, cache=TRUE}
+predMlr <- predict(modMlr, subTest)
+predLb <- predict(modLb, subTest)
+predRf <- predict(modRf, subTest)
+predSvm <- predict(modSvm, subTest)
+cmMlr <- confusionMatrix(predMlr, subTest$classe)
+cmLb <- confusionMatrix(predLb, subTest$classe)
+cmRf <- confusionMatrix(predRf, subTest$classe)
+cmSvm <- confusionMatrix(predSvm, subTest$classe)
+AccuMlr <- cmMlr$overall[['Accuracy']]
+AccuLb <- cmLb$overall[['Accuracy']]
+AccuRf <- cmRf$overall[['Accuracy']]
+AccuSvm <- cmSvm$overall[['Accuracy']]
+erMlr <- 1 - AccuMlr
+erLb <- 1 - AccuLb
+erRf <- 1 - AccuRf
+erSvm <- 1 - AccuSvm
+```
+
+A table of out of sample accuracy and error rates is listed.
+
+```{r table, cache=TRUE}
+Model <- c("Random Forest", "SVM (radial)","LogitBoost","Multinomial")
+Accuracy <- c(AccuRf, AccuSvm, AccuLb, AccuMlr)
+Error_Rate <- c(erRf, erSvm, erLb, erMlr)
+pct <- cbind(Model, Accuracy, Error_Rate)
+knitr::kable(pct)
+```
+
+The method of Random Forest provides the highest accuracy and the lowest error rate, followed by radial SVM, Logit Boost and Multinomial. Therefore, Random Forest will be used to predict the activity classes of 20 test cases.
+
+## Prediction on 20 Test Cases
+
+```{r pred_test}
+tprefRf <- predict(modRf, test)
+tprefRf
+```
+
+Then generate files for the "Course Project: submission". 
+
+```{r submission_file, cache=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(tprefRf)
+```
+
+## Conclusion
+
+Among the multiple methods (Multinomial Logistic Regression, Logit Boosted Model, Random Forest, Support Vector Machine), Random Forest showed the highest out of sample accuracy >99%. This method was used to predict the activity classes in the test cases.
